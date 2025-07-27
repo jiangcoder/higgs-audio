@@ -65,32 +65,17 @@ def prepare_multi_emotion_context(emotions: List[EmotionConfig], audio_tokenizer
     example_text = f"[EMOTION_{i}:{emotion_config.emotion}:{emotion_config.intensity}] {prompt_text}"
 ```
 
-### 3. 添加文本分段支持
+### 3. 简化文本处理
 
 ```python
-def prepare_multi_emotion_text_with_segments(text: str, emotions: List[EmotionConfig], emotion_segments: Optional[List[Dict[str, Any]]] = None) -> str:
+def prepare_multi_emotion_text_with_segments(text: str, emotions: List[EmotionConfig]) -> str:
     """为多情感生成准备带情感标签的文本"""
-    if emotion_segments:
-        # 使用预定义的情感分段
-        segments = []
-        for segment_config in emotion_segments:
-            start_pos = segment_config.get("start", 0)
-            end_pos = segment_config.get("end", len(text))
-            emotion_index = segment_config.get("emotion_index", 0)
-            
-            segment_text = text[start_pos:end_pos].strip()
-            if segment_text and emotion_index < len(emotions):
-                emotion_config = emotions[emotion_index]
-                segments.append(f"[EMOTION_{emotion_index}:{emotion_config.emotion}:{emotion_config.intensity}] {segment_text}")
-        
-        return " ".join(segments)
+    # 使用第一个情感作为默认情感
+    if emotions:
+        emotion_config = emotions[0]
+        return f"[EMOTION_0:{emotion_config.emotion}:{emotion_config.intensity}] {text}"
     else:
-        # 如果没有预定义分段，使用默认情感（第一个）
-        if emotions:
-            emotion_config = emotions[0]
-            return f"[EMOTION_0:{emotion_config.emotion}:{emotion_config.intensity}] {text}"
-        else:
-            return text
+        return text
 ```
 
 ## 使用示例
@@ -122,23 +107,7 @@ request_data = {
 }
 ```
 
-### 精确情感分段
 
-```python
-emotion_segments = [
-    {"start": 0, "end": 25, "emotion_index": 0},  # "I'm so happy to see you!" -> happy
-    {"start": 25, "end": 65, "emotion_index": 1},  # "But then I heard the bad news and felt really sad." -> sad
-]
-
-request_data = {
-    "transcript": "I'm so happy to see you! But then I heard the bad news and felt really sad.",
-    "emotions": emotions_config,
-    "emotion_segments": emotion_segments,
-    "scene_prompt": "A person experiencing rapid emotional changes",
-    "temperature": 0.8,
-    "seed": 456
-}
-```
 
 ## 测试验证
 
@@ -148,7 +117,6 @@ request_data = {
 2. **基础音频生成测试**
 3. **多情感音频生成测试**
 4. **流式音频生成测试**
-5. **情感分段功能测试**
 
 ## 结论
 
@@ -175,7 +143,7 @@ request_data = {
 ### 使用建议
 
 1. **对于简单场景**：当前实现已经足够使用
-2. **对于复杂场景**：建议使用情感分段功能来获得更精确的控制
+2. **对于复杂场景**：当前实现提供了多种情感参考，模型会自动选择合适的风格
 3. **对于实时应用**：当前实现适合批量生成，不适合实时情感切换
 
 ## 文件结构

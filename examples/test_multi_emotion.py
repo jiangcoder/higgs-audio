@@ -162,57 +162,7 @@ def test_streaming_generation(server_url: str) -> bool:
         return False
 
 
-def test_emotion_segments(server_url: str) -> bool:
-    """测试情感分段功能"""
-    print("测试情感分段功能...")
-    
-    emotions_config = [
-        {
-            "emotion": "happy",
-            "ref_audio": "belinda",
-            "intensity": 1.2,
-            "scene_prompt": "A happy person"
-        },
-        {
-            "emotion": "sad",
-            "ref_audio": "broom_salesman",
-            "intensity": 0.8,
-            "scene_prompt": "A sad person"
-        }
-    ]
-    
-    emotion_segments = [
-        {"start": 0, "end": 20, "emotion_index": 0},  # "I'm happy to see you!" -> happy
-        {"start": 20, "end": 50, "emotion_index": 1}   # "But I'm also feeling sad." -> sad
-    ]
-    
-    request_data = {
-        "transcript": "I'm happy to see you! But I'm also feeling sad.",
-        "emotions": emotions_config,
-        "emotion_segments": emotion_segments,
-        "scene_prompt": "Emotion transition",
-        "temperature": 0.8,
-        "seed": 789
-    }
-    
-    try:
-        response = requests.post(
-            f"{server_url}/generate",
-            json=request_data,
-            timeout=30
-        )
-        
-        if response.status_code == 200:
-            print("✓ 情感分段功能测试通过")
-            return True
-        else:
-            print(f"✗ 情感分段功能测试失败: {response.status_code}")
-            print(f"错误信息: {response.text}")
-            return False
-            
-    except Exception as e:
-        print(f"✗ 情感分段功能测试异常: {e}")
-        return False
+
 
 
 def main():
@@ -235,7 +185,6 @@ def main():
         ("基础音频生成", test_basic_generation),
         ("多情感音频生成", test_multi_emotion_generation),
         ("流式音频生成", test_streaming_generation),
-        ("情感分段功能", test_emotion_segments),
     ]
     
     passed = 0

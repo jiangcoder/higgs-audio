@@ -534,50 +534,17 @@ def prepare_multi_emotion_context(emotions: List[EmotionConfig], audio_tokenizer
     return messages, audio_ids
 
 
-def prepare_multi_emotion_text_with_segments(text: str, emotions: List[EmotionConfig], emotion_segments: Optional[List[Dict[str, Any]]] = None) -> str:
+def prepare_multi_emotion_text_with_segments(text: str, emotions: List[EmotionConfig]) -> str:
     """为多情感生成准备带情感标签的文本"""
-    if emotion_segments:
-        # 使用预定义的情感分段
-        segments = []
-        for segment_config in emotion_segments:
-            start_pos = segment_config.get("start", 0)
-            end_pos = segment_config.get("end", len(text))
-            emotion_index = segment_config.get("emotion_index", 0)
-            
-            segment_text = text[start_pos:end_pos].strip()
-            if segment_text and emotion_index < len(emotions):
-                emotion_config = emotions[emotion_index]
-                segments.append(f"[EMOTION_{emotion_index}:{emotion_config.emotion}:{emotion_config.intensity}] {segment_text}")
-        
-        return " ".join(segments)
+    # 使用第一个情感作为默认情感
+    if emotions:
+        emotion_config = emotions[0]
+        return f"[EMOTION_0:{emotion_config.emotion}:{emotion_config.intensity}] {text}"
     else:
-        # 如果没有预定义分段，使用默认情感（第一个）
-        if emotions:
-            emotion_config = emotions[0]
-            return f"[EMOTION_0:{emotion_config.emotion}:{emotion_config.intensity}] {text}"
-        else:
-            return text
+        return text
 
 
-def segment_text_with_emotions(text: str, emotion_segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """根据情感分段配置分割文本"""
-    segments = []
-    
-    # 按情感分段配置分割文本
-    for segment_config in emotion_segments:
-        start_pos = segment_config.get("start", 0)
-        end_pos = segment_config.get("end", len(text))
-        emotion_index = segment_config.get("emotion_index", 0)
-        
-        segment_text = text[start_pos:end_pos].strip()
-        if segment_text:
-            segments.append({
-                "text": segment_text,
-                "emotion_index": emotion_index,
-                "emotion_config": segment_config.get("emotion_config")
-            })
-    
-    return segments
+
 
 
 # FastAPI App
@@ -593,7 +560,6 @@ class GenerationRequest(BaseModel):
     
     # 多情感支持
     emotions: Optional[List[EmotionConfig]] = Field(None, description="多情感配置列表")
-    emotion_segments: Optional[List[Dict[str, Any]]] = Field(None, description="文本分段及其对应的情感配置")
     
     temperature: float = Field(1.0, description="Sampling temperature.")
     top_k: int = Field(50, description="Top-k filtering.")
@@ -665,8 +631,7 @@ async def generate_audio(request: GenerationRequest):
             # 为多情感模式准备带情感标签的文本
             processed_transcript = prepare_multi_emotion_text_with_segments(
                 transcript, 
-                request.emotions, 
-                request.emotion_segments
+                request.emotions
             )
         else:
             messages, audio_ids = prepare_generation_context(
@@ -817,8 +782,7 @@ async def stream_generate(request: GenerationRequest):
         # 为多情感模式准备带情感标签的文本
         processed_transcript = prepare_multi_emotion_text_with_segments(
             transcript, 
-            request.emotions, 
-            request.emotion_segments
+            request.emotions
         )
     else:
         messages, audio_ids = prepare_generation_context(

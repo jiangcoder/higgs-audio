@@ -18,7 +18,6 @@ def create_multi_emotion_request(
     transcript: str,
     emotions: List[Dict[str, Any]],
     scene_prompt: str = None,
-    emotion_segments: List[Dict[str, Any]] = None,
     temperature: float = 1.0,
     top_k: int = 50,
     top_p: float = 0.95,
@@ -31,7 +30,6 @@ def create_multi_emotion_request(
         transcript: 要转换的文本
         emotions: 情感配置列表
         scene_prompt: 场景描述
-        emotion_segments: 文本分段及其对应的情感配置
         temperature: 采样温度
         top_k: Top-k过滤
         top_p: Top-p过滤
@@ -44,7 +42,6 @@ def create_multi_emotion_request(
         "transcript": transcript,
         "emotions": emotions,
         "scene_prompt": scene_prompt,
-        "emotion_segments": emotion_segments,
         "temperature": temperature,
         "top_k": top_k,
         "top_p": top_p,
@@ -230,60 +227,10 @@ def main():
     
     print("\n" + "="*50 + "\n")
     
-    # 示例3: 精确情感分段生成
-    print("=== 示例3: 精确情感分段生成 ===")
+    # 示例3: 中文多情感生成
+    print("=== 示例3: 中文多情感生成 ===")
     
     emotions_config_3 = [
-        {
-            "emotion": "happy",
-            "ref_audio": "belinda",
-            "intensity": 1.2,
-            "scene_prompt": "A happy person sharing good news"
-        },
-        {
-            "emotion": "sad",
-            "ref_audio": "broom_salesman",
-            "intensity": 0.8,
-            "scene_prompt": "A sad person expressing disappointment"
-        },
-        {
-            "emotion": "excited",
-            "ref_audio": "en_woman",
-            "intensity": 1.5,
-            "scene_prompt": "An excited person celebrating"
-        }
-    ]
-    
-    transcript_3 = "I'm so happy to see you! But then I heard the bad news and felt really sad. However, when I found out about the surprise, I became incredibly excited!"
-    
-    # 定义精确的情感分段
-    emotion_segments_3 = [
-        {"start": 0, "end": 25, "emotion_index": 0},  # "I'm so happy to see you!" -> happy
-        {"start": 25, "end": 65, "emotion_index": 1},  # "But then I heard the bad news and felt really sad." -> sad
-        {"start": 65, "end": 120, "emotion_index": 2}  # "However, when I found out about the surprise, I became incredibly excited!" -> excited
-    ]
-    
-    request_data_3 = create_multi_emotion_request(
-        transcript=transcript_3,
-        emotions=emotions_config_3,
-        scene_prompt="A person experiencing rapid emotional changes",
-        emotion_segments=emotion_segments_3,
-        temperature=0.8,
-        seed=456
-    )
-    
-    try:
-        audio_array_3 = stream_audio_generation(SERVER_URL, request_data_3)
-        save_audio_to_wav(audio_array_3, "multi_emotion_example3.wav")
-    except Exception as e:
-        print(f"示例3失败: {e}")
-    
-    print("\n" + "="*50 + "\n")
-    
-    # 示例4: 中文多情感生成
-    print("=== 示例4: 中文多情感生成 ===")
-    
-    emotions_config_4 = [
         {
             "emotion": "joyful",
             "ref_audio": "zh_man_sichuan",
@@ -298,21 +245,21 @@ def main():
         }
     ]
     
-    transcript_4 = "今天真是太开心了！我收到了一个好消息。不过接下来要讨论的事情很重要，需要认真对待。"
+    transcript_3 = "今天真是太开心了！我收到了一个好消息。不过接下来要讨论的事情很重要，需要认真对待。"
     
-    request_data_4 = create_multi_emotion_request(
-        transcript=transcript_4,
-        emotions=emotions_config_4,
+    request_data_3 = create_multi_emotion_request(
+        transcript=transcript_3,
+        emotions=emotions_config_3,
         scene_prompt="一个人从开心到严肃的情绪转换",
         temperature=0.9,
-        seed=789
+        seed=456
     )
     
     try:
-        audio_array_4 = stream_audio_generation(SERVER_URL, request_data_4)
-        save_audio_to_wav(audio_array_4, "multi_emotion_example4.wav")
+        audio_array_3 = stream_audio_generation(SERVER_URL, request_data_3)
+        save_audio_to_wav(audio_array_3, "multi_emotion_example3.wav")
     except Exception as e:
-        print(f"示例4失败: {e}")
+        print(f"示例3失败: {e}")
 
 
 if __name__ == "__main__":

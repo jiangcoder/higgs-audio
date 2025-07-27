@@ -117,6 +117,7 @@ class AsyncHiggsAudioStreamer(BaseStreamer):
 
         # Process as text tokens
         if len(value.shape) > 1:
+            self.next_tokens_are_prompt = False
             value = value[0]
 
         text = self.tokenizer.decode(value, **self.decode_kwargs)

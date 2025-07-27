@@ -107,6 +107,46 @@ def revert_delay_pattern(data):
     return torch.cat(out_l, dim=0)
 
 
+def streaming_revert_delay_pattern(data, overlap_data=None):
+    """Convert samples encoded with delay pattern back to the original form for streaming generation.
+    
+    This function handles the delay pattern reversion for streaming audio generation, maintaining
+    overlap data between chunks to ensure smooth transitions.
+
+    Args:
+        data (:obj:`torch.Tensor`):
+            The data with delay pattern applied. It will have shape (num_codebooks, seq_len + num_codebooks - 1).
+        overlap_data (:obj:`torch.Tensor`, optional):
+            Overlap data from previous chunk to maintain continuity.
+
+    Returns:
+        ret (:obj:`torch.Tensor`):
+            Recovered data with delay pattern removed. It will have shape (num_codebooks, seq_len).
+        overlap_data (:obj:`torch.Tensor`):
+            Overlap data for next chunk.
+    """
+    assert len(data.shape) == 2
+    num_codebooks = data.shape[0]
+    
+    # Revert delay pattern
+    out_l = []
+    for i in range(num_codebooks):
+        out_l.append(data[i : (i + 1), i : (data.shape[1] - num_codebooks + 1 + i)])
+    reverted_data = torch.cat(out_l, dim=0)
+    
+    # Handle overlap data for streaming
+    if overlap_data is not None:
+        # Combine overlap with current data
+        combined_data = torch.cat([overlap_data, reverted_data], dim=1)
+        # Keep last num_codebooks-1 tokens as overlap for next chunk
+        overlap_data = combined_data[:, -(num_codebooks-1):]
+        return combined_data, overlap_data
+    else:
+        # For first chunk, no overlap to handle
+        overlap_data = reverted_data[:, -(num_codebooks-1):]
+        return reverted_data, overlap_data
+
+
 def merge_input_ids_with_audio_features(
     audio_features_embed,
     audio_features_length,

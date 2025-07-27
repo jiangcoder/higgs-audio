@@ -499,6 +499,11 @@ def prepare_multi_emotion_context(emotions: List[EmotionConfig], audio_tokenizer
         system_content += f"<|scene_desc_start|>\n{scene_prompt}\n\n"
     
     system_content += "Available emotions:\n" + "\n".join(emotion_descriptions) + "\n"
+    system_content += "\nInstructions:\n"
+    system_content += "1. Use the provided reference audios to understand different emotional styles\n"
+    system_content += "2. Apply the appropriate emotion based on the content and context\n"
+    system_content += "3. Maintain natural transitions between different emotional states\n"
+    system_content += "4. Consider the intensity level when applying emotions\n"
     
     if scene_prompt:
         system_content += "<|scene_desc_end|>"
@@ -517,8 +522,8 @@ def prepare_multi_emotion_context(emotions: List[EmotionConfig], audio_tokenizer
         with open(prompt_text_path, "r", encoding="utf-8") as f:
             prompt_text = f.read().strip()
         
-        # 添加情感标签到示例文本
-        example_text = f"[EMOTION_{i}] {prompt_text}"
+        # 添加情感标签到示例文本，使用更明确的格式
+        example_text = f"[EMOTION_{i}:{emotion_config.emotion}:{emotion_config.intensity}] {prompt_text}"
         
         audio_ids.append(audio_tokenizer.encode(prompt_audio_path))
         messages.extend([
@@ -527,6 +532,31 @@ def prepare_multi_emotion_context(emotions: List[EmotionConfig], audio_tokenizer
         ])
     
     return messages, audio_ids
+
+
+def prepare_multi_emotion_text_with_segments(text: str, emotions: List[EmotionConfig], emotion_segments: Optional[List[Dict[str, Any]]] = None) -> str:
+    """为多情感生成准备带情感标签的文本"""
+    if emotion_segments:
+        # 使用预定义的情感分段
+        segments = []
+        for segment_config in emotion_segments:
+            start_pos = segment_config.get("start", 0)
+            end_pos = segment_config.get("end", len(text))
+            emotion_index = segment_config.get("emotion_index", 0)
+            
+            segment_text = text[start_pos:end_pos].strip()
+            if segment_text and emotion_index < len(emotions):
+                emotion_config = emotions[emotion_index]
+                segments.append(f"[EMOTION_{emotion_index}:{emotion_config.emotion}:{emotion_config.intensity}] {segment_text}")
+        
+        return " ".join(segments)
+    else:
+        # 如果没有预定义分段，使用默认情感（第一个）
+        if emotions:
+            emotion_config = emotions[0]
+            return f"[EMOTION_0:{emotion_config.emotion}:{emotion_config.intensity}] {text}"
+        else:
+            return text
 
 
 def segment_text_with_emotions(text: str, emotion_segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -631,6 +661,13 @@ async def generate_audio(request: GenerationRequest):
                 audio_tokenizer=audio_tokenizer_global,
                 scene_prompt=request.scene_prompt,
             )
+            
+            # 为多情感模式准备带情感标签的文本
+            processed_transcript = prepare_multi_emotion_text_with_segments(
+                transcript, 
+                request.emotions, 
+                request.emotion_segments
+            )
         else:
             messages, audio_ids = prepare_generation_context(
                 scene_prompt=request.scene_prompt,
@@ -639,9 +676,10 @@ async def generate_audio(request: GenerationRequest):
                 audio_tokenizer=audio_tokenizer_global,
                 speaker_tags=speaker_tags,
             )
+            processed_transcript = transcript
 
         chunked_text = prepare_chunk_text(
-            transcript,
+            processed_transcript,
             chunk_method=request.chunk_method,
             chunk_max_word_num=request.chunk_max_word_num,
             chunk_max_num_turns=request.chunk_max_num_turns,
@@ -775,6 +813,13 @@ async def stream_generate(request: GenerationRequest):
             audio_tokenizer=audio_tokenizer_global,
             scene_prompt=request.scene_prompt,
         )
+        
+        # 为多情感模式准备带情感标签的文本
+        processed_transcript = prepare_multi_emotion_text_with_segments(
+            transcript, 
+            request.emotions, 
+            request.emotion_segments
+        )
     else:
         messages, audio_ids = prepare_generation_context(
             scene_prompt=request.scene_prompt,
@@ -783,9 +828,10 @@ async def stream_generate(request: GenerationRequest):
             audio_tokenizer=audio_tokenizer_global,
             speaker_tags=speaker_tags,
         )
+        processed_transcript = transcript
 
     chunked_text = prepare_chunk_text(
-        transcript,
+        processed_transcript,
         chunk_method=request.chunk_method,
         chunk_max_word_num=request.chunk_max_word_num,
         chunk_max_num_turns=request.chunk_max_num_turns,

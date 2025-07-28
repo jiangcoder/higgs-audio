@@ -346,7 +346,7 @@ curl -X POST http://107.151.234.179:6001/streaming \
      --max-time 60 \
      --connect-timeout 30 \
      -d '{
-         "transcript": "I'\''m so fucking turned on. Fuck me, sir. Oh, yes.",
+         "transcript": "<moan> yes... <moan> <moan> you are making me... <moan>",
          "emotions": [
              {
                  "emotion": "explicit sexual",
@@ -410,7 +410,7 @@ curl -v -X POST http://107.151.234.179:6001/streaming \
      --max-time 60 \
      --connect-timeout 30 \
      -d '{
-         "transcript": "I'\''m so fucking turned on. Fuck me, sir. Oh, yes.",
+         "transcript": "<moan> yes... <moan> <moan> you're making me... <moan>",
          "emotions": [
              {
                  "emotion": "explicit sexual",

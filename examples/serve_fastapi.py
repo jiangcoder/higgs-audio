@@ -493,20 +493,19 @@ def prepare_multi_emotion_context(emotions: List[EmotionConfig], audio_tokenizer
             emotion_desc += f" - {emotion_config.scene_prompt}"
         emotion_descriptions.append(emotion_desc)
     
-    # 构建系统消息
-    system_content = "Generate audio following instruction with multiple emotions.\n\n"
+    # 构建系统消息 - 让模型理解如何利用参考音频
+    system_content = "You are an advanced audio generation model with multiple emotional styles.\n\n"
     if scene_prompt:
-        system_content += f"<|scene_desc_start|>\n{scene_prompt}\n\n"
+        system_content += f"<|scene_desc_start|>\n{scene_prompt}\n<|scene_desc_end|>\n\n"
     
-    system_content += "Available emotions:\n" + "\n".join(emotion_descriptions) + "\n"
-    system_content += "\nInstructions:\n"
-    system_content += "1. Use the provided reference audios to understand different emotional styles\n"
-    system_content += "2. Apply the appropriate emotion based on the content and context\n"
-    system_content += "3. Maintain natural transitions between different emotional states\n"
-    system_content += "4. Consider the intensity level when applying emotions\n"
-    
-    if scene_prompt:
-        system_content += "<|scene_desc_end|>"
+    system_content += "Available emotional styles:\n" + "\n".join(emotion_descriptions) + "\n\n"
+    system_content += "Instructions:\n"
+    system_content += "1. Analyze the input text to understand its emotional content and context\n"
+    system_content += "2. Choose the most appropriate emotional style from the available options\n"
+    system_content += "3. Use the corresponding reference audio as a style guide\n"
+    system_content += "4. Apply the emotional intensity level when generating audio\n"
+    system_content += "5. Maintain natural and coherent emotional expression throughout the audio\n"
+    system_content += "6. You can blend multiple emotional styles if the content requires it\n"
     
     system_message = Message(role="system", content=system_content)
     messages.append(system_message)
@@ -522,7 +521,7 @@ def prepare_multi_emotion_context(emotions: List[EmotionConfig], audio_tokenizer
         with open(prompt_text_path, "r", encoding="utf-8") as f:
             prompt_text = f.read().strip()
         
-        # 添加情感标签到示例文本，使用更明确的格式
+        # 添加情感标签到示例文本，让模型学习情感标签的使用
         example_text = f"[EMOTION_{i}:{emotion_config.emotion}:{emotion_config.intensity}] {prompt_text}"
         
         audio_ids.append(audio_tokenizer.encode(prompt_audio_path))
@@ -536,12 +535,55 @@ def prepare_multi_emotion_context(emotions: List[EmotionConfig], audio_tokenizer
 
 def prepare_multi_emotion_text_with_segments(text: str, emotions: List[EmotionConfig]) -> str:
     """为多情感生成准备带情感标签的文本"""
-    # 使用第一个情感作为默认情感
-    if emotions:
-        emotion_config = emotions[0]
-        return f"[EMOTION_0:{emotion_config.emotion}:{emotion_config.intensity}] {text}"
-    else:
+    if not emotions:
         return text
+    
+    # 方案1: 让模型自动选择情感（推荐）
+    def prepare_for_auto_selection(text: str, emotions: List[EmotionConfig]) -> str:
+        """让大模型根据文本内容自动选择合适的情感"""
+        # 构建情感选择指令
+        emotion_descriptions = []
+        for i, emotion_config in enumerate(emotions):
+            desc = f"EMOTION_{i}: {emotion_config.emotion}"
+            if emotion_config.scene_prompt:
+                desc += f" ({emotion_config.scene_prompt})"
+            emotion_descriptions.append(desc)
+        
+        # 创建选择指令
+        selection_instruction = f"""
+请根据以下文本内容，从可用的情感中选择最合适的一个来表达：
+
+可用情感：
+{chr(10).join(emotion_descriptions)}
+
+文本内容：{text}
+
+请用选定的情感标签标记文本：[EMOTION_X:情感名称:强度]
+"""
+        
+        # 简化版本：直接返回原文本，让模型通过上下文学习
+        return text
+    
+    # 方案2: 均匀分配（用于测试不同情感效果）
+    def assign_emotions_evenly(text: str, emotions: List[EmotionConfig]) -> str:
+        """均匀分配情感到文本段落，用于测试"""
+        sentences = re.split(r'[.!?]+', text.strip())
+        processed_sentences = []
+        
+        for i, sentence in enumerate(sentences):
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+                
+            # 循环使用情感配置
+            emotion_index = i % len(emotions)
+            emotion_config = emotions[emotion_index]
+            processed_sentences.append(f"[EMOTION_{emotion_index}:{emotion_config.emotion}:{emotion_config.intensity}] {sentence}")
+        
+        return ". ".join(processed_sentences) + "."
+    
+    # 使用自动选择方案
+    return prepare_for_auto_selection(text, emotions)
 
 
 

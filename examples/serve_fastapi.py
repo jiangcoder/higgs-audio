@@ -4,7 +4,11 @@ import time
 import re
 import os
 import copy
+import sys
 from typing import List, Optional, Dict, Any
+
+# 添加上级目录到Python路径
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import torch
 import numpy as np
@@ -482,6 +486,10 @@ def prepare_generation_context(scene_prompt, ref_audio, ref_audio_in_system_mess
 
 def prepare_multi_emotion_context(emotions: List[EmotionConfig], audio_tokenizer, scene_prompt: Optional[str] = None):
     """准备多情感生成上下文"""
+    logger.info(f"=== 开始准备多情感上下文 ===")
+    logger.info(f"情感配置数量: {len(emotions)}")
+    logger.info(f"场景描述: {scene_prompt}")
+    
     messages = []
     audio_ids = []
     
@@ -492,11 +500,13 @@ def prepare_multi_emotion_context(emotions: List[EmotionConfig], audio_tokenizer
         if emotion_config.scene_prompt:
             emotion_desc += f" - {emotion_config.scene_prompt}"
         emotion_descriptions.append(emotion_desc)
+        logger.info(f"情感描述 {i}: {emotion_desc}")
     
     # 构建系统消息 - 让模型理解如何利用参考音频
     system_content = "You are an advanced audio generation model with multiple emotional styles.\n\n"
     if scene_prompt:
         system_content += f"<|scene_desc_start|>\n{scene_prompt}\n<|scene_desc_end|>\n\n"
+        logger.info(f"添加场景描述到系统消息: {scene_prompt}")
     
     system_content += "Available emotional styles:\n" + "\n".join(emotion_descriptions) + "\n\n"
     system_content += "Instructions:\n"
@@ -507,40 +517,76 @@ def prepare_multi_emotion_context(emotions: List[EmotionConfig], audio_tokenizer
     system_content += "5. Maintain natural and coherent emotional expression throughout the audio\n"
     system_content += "6. You can blend multiple emotional styles if the content requires it\n"
     
+    logger.info("系统消息已构建")
+    logger.info(f"系统消息长度: {len(system_content)} 字符")
+    
     system_message = Message(role="system", content=system_content)
     messages.append(system_message)
+    logger.info("系统消息已添加到消息列表")
     
     # 为每个情感添加参考音频示例
+    logger.info("开始处理参考音频...")
     for i, emotion_config in enumerate(emotions):
         prompt_audio_path = os.path.join(f"{CURR_DIR}/voice_prompts", f"{emotion_config.ref_audio}.wav")
         prompt_text_path = os.path.join(f"{CURR_DIR}/voice_prompts", f"{emotion_config.ref_audio}.txt")
         
+        logger.info(f"处理情感 {i}: {emotion_config.emotion}")
+        logger.info(f"  音频文件路径: {prompt_audio_path}")
+        logger.info(f"  文本文件路径: {prompt_text_path}")
+        
         assert os.path.exists(prompt_audio_path), f"Voice prompt audio file {prompt_audio_path} does not exist."
         assert os.path.exists(prompt_text_path), f"Voice prompt text file {prompt_text_path} does not exist."
+        
+        logger.info("  文件存在性检查通过")
         
         with open(prompt_text_path, "r", encoding="utf-8") as f:
             prompt_text = f.read().strip()
         
+        logger.info(f"  参考文本: {prompt_text}")
+        
         # 添加情感标签到示例文本，让模型学习情感标签的使用
         example_text = f"[EMOTION_{i}:{emotion_config.emotion}:{emotion_config.intensity}] {prompt_text}"
+        logger.info(f"  示例文本: {example_text}")
         
-        audio_ids.append(audio_tokenizer.encode(prompt_audio_path))
+        # 编码音频
+        audio_encoded = audio_tokenizer.encode(prompt_audio_path)
+        audio_ids.append(audio_encoded)
+        logger.info(f"  音频编码完成，形状: {audio_encoded.shape}")
+        
         messages.extend([
             Message(role="user", content=example_text),
             Message(role="assistant", content=AudioContent(audio_url=prompt_audio_path))
         ])
+        logger.info(f"  消息已添加到列表")
+    
+    logger.info(f"=== 多情感上下文准备完成 ===")
+    logger.info(f"消息数量: {len(messages)}")
+    logger.info(f"音频ID数量: {len(audio_ids)}")
     
     return messages, audio_ids
 
 
 def prepare_multi_emotion_text_with_segments(text: str, emotions: List[EmotionConfig]) -> str:
     """为多情感生成准备带情感标签的文本"""
+    logger.info(f"=== 开始多情感文本处理 ===")
+    logger.info(f"输入文本: {text}")
+    logger.info(f"情感配置数量: {len(emotions) if emotions else 0}")
+    
     if not emotions:
+        logger.info("没有配置情感，返回原文本")
         return text
+    
+    # 打印情感配置详情
+    for i, emotion_config in enumerate(emotions):
+        logger.info(f"情感 {i}: {emotion_config.emotion} (强度: {emotion_config.intensity}, 参考音频: {emotion_config.ref_audio})")
+        if emotion_config.scene_prompt:
+            logger.info(f"  场景描述: {emotion_config.scene_prompt}")
     
     # 方案1: 让模型自动选择情感（推荐）
     def prepare_for_auto_selection(text: str, emotions: List[EmotionConfig]) -> str:
         """让大模型根据文本内容自动选择合适的情感"""
+        logger.info("使用自动情感选择方案")
+        
         # 构建情感选择指令
         emotion_descriptions = []
         for i, emotion_config in enumerate(emotions):
@@ -548,6 +594,8 @@ def prepare_multi_emotion_text_with_segments(text: str, emotions: List[EmotionCo
             if emotion_config.scene_prompt:
                 desc += f" ({emotion_config.scene_prompt})"
             emotion_descriptions.append(desc)
+        
+        logger.info(f"可用情感描述: {emotion_descriptions}")
         
         # 创建选择指令
         selection_instruction = f"""
@@ -561,13 +609,20 @@ def prepare_multi_emotion_text_with_segments(text: str, emotions: List[EmotionCo
 请用选定的情感标签标记文本：[EMOTION_X:情感名称:强度]
 """
         
+        logger.info("选择指令已构建")
+        logger.info("直接返回原文本，让模型通过上下文学习")
+        
         # 简化版本：直接返回原文本，让模型通过上下文学习
         return text
     
     # 方案2: 均匀分配（用于测试不同情感效果）
     def assign_emotions_evenly(text: str, emotions: List[EmotionConfig]) -> str:
         """均匀分配情感到文本段落，用于测试"""
+        logger.info("使用均匀分配方案（测试模式）")
+        
         sentences = re.split(r'[.!?]+', text.strip())
+        logger.info(f"文本分割为 {len(sentences)} 个句子")
+        
         processed_sentences = []
         
         for i, sentence in enumerate(sentences):
@@ -578,12 +633,26 @@ def prepare_multi_emotion_text_with_segments(text: str, emotions: List[EmotionCo
             # 循环使用情感配置
             emotion_index = i % len(emotions)
             emotion_config = emotions[emotion_index]
-            processed_sentences.append(f"[EMOTION_{emotion_index}:{emotion_config.emotion}:{emotion_config.intensity}] {sentence}")
+            processed_sentence = f"[EMOTION_{emotion_index}:{emotion_config.emotion}:{emotion_config.intensity}] {sentence}"
+            processed_sentences.append(processed_sentence)
+            
+            logger.info(f"句子 {i+1}: {sentence}")
+            logger.info(f"  分配情感: {emotion_config.emotion} (索引: {emotion_index})")
+            logger.info(f"  处理后: {processed_sentence}")
         
-        return ". ".join(processed_sentences) + "."
+        result = ". ".join(processed_sentences) + "."
+        logger.info(f"均匀分配完成，最终结果: {result}")
+        return result
     
     # 使用自动选择方案
-    return prepare_for_auto_selection(text, emotions)
+    logger.info("选择使用自动情感选择方案")
+    result = prepare_for_auto_selection(text, emotions)
+    
+    logger.info(f"=== 多情感文本处理完成 ===")
+    logger.info(f"最终输出: {result}")
+    logger.info(f"输出长度: {len(result)} 字符")
+    
+    return result
 
 
 
@@ -815,6 +884,9 @@ async def stream_generate(request: GenerationRequest):
 
     # 检查是否使用多情感模式
     if request.emotions:
+        logger.info("=== 检测到多情感模式 ===")
+        logger.info(f"情感配置: {[e.emotion for e in request.emotions]}")
+        
         messages, audio_ids = prepare_multi_emotion_context(
             emotions=request.emotions,
             audio_tokenizer=audio_tokenizer_global,
@@ -826,7 +898,12 @@ async def stream_generate(request: GenerationRequest):
             transcript, 
             request.emotions
         )
+        
+        logger.info(f"多情感处理完成")
+        logger.info(f"原始文本: {transcript}")
+        logger.info(f"处理后文本: {processed_transcript}")
     else:
+        logger.info("=== 使用单情感模式 ===")
         messages, audio_ids = prepare_generation_context(
             scene_prompt=request.scene_prompt,
             ref_audio=request.ref_audio,
@@ -835,6 +912,7 @@ async def stream_generate(request: GenerationRequest):
             speaker_tags=speaker_tags,
         )
         processed_transcript = transcript
+        logger.info(f"单情感处理完成，使用原始文本")
 
     chunked_text = prepare_chunk_text(
         processed_transcript,

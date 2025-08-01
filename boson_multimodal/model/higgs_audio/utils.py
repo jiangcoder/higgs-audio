@@ -2,6 +2,8 @@ import contextlib
 from contextlib import contextmanager
 from functools import wraps
 import torch
+from loguru import logger
+
 from transformers.integrations import is_deepspeed_available
 
 if is_deepspeed_available():
@@ -106,6 +108,65 @@ def revert_delay_pattern(data):
         out_l.append(data[i : (i + 1), i : (data.shape[1] - num_codebooks + 1 + i)])
     return torch.cat(out_l, dim=0)
 
+def streaming_revert_delay_pattern(data, previous_data=None):
+    """Convert samples encoded with delay pattern back to the original form for streaming.
+
+    Args:
+        data (:obj:`torch.Tensor`):
+            The current batch data with delay pattern applied. 
+            Shape: (num_codebooks, current_seq_len + num_codebooks - 1).
+        previous_data (:obj:`torch.Tensor`, optional):
+            The previous batch data to maintain continuity across streaming chunks.
+            Shape: (num_codebooks, overlap_len). Default is None.
+
+    Returns:
+        ret (:obj:`torch.Tensor`):
+            Recovered data with delay pattern removed. 
+            Shape: (num_codebooks, current_seq_len).
+        overlap_data (:obj:`torch.Tensor`):
+            Data to be used as previous_data for the next chunk.
+            Shape: (num_codebooks, num_codebooks - 1).
+    """
+    assert len(data.shape) == 2
+    num_codebooks = data.shape[0]
+    
+    # 如果有前一批次的数据，需要拼接以保证连续性
+    if previous_data is not None:
+        # 拼接前一批次的重叠数据
+        extended_data = torch.cat([previous_data, data], dim=1)
+    else:
+        extended_data = data
+    
+    logger.info(f"data {data}, \n previous_data {previous_data}")
+    
+    out_l = []
+    for i in range(num_codebooks):
+        # 计算每个codebook的有效数据范围
+        start_col = i
+        end_col = extended_data.shape[1] - num_codebooks + 1 + i
+        
+        # 确保不超出边界
+        if end_col > extended_data.shape[1]:
+            end_col = extended_data.shape[1]
+        
+        if start_col < end_col:
+            extracted = extended_data[i:i+1, start_col:end_col]
+            out_l.append(extracted)
+        else:
+            # 如果没有有效数据，创建空张量
+            extracted = torch.empty((1, 0), dtype=extended_data.dtype, device=extended_data.device)
+            out_l.append(extracted)
+    
+    result = torch.cat(out_l, dim=0)
+    
+    # 计算下次需要的重叠数据（最后 num_codebooks-1 列）
+    overlap_len = min(num_codebooks - 1, data.shape[1])
+    if overlap_len > 0:
+        overlap_data = data[:, -overlap_len:]
+    else:
+        overlap_data = torch.empty((num_codebooks, 0), dtype=data.dtype, device=data.device)
+    
+    return result, overlap_data
 
 def merge_input_ids_with_audio_features(
     audio_features_embed,

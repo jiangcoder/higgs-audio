@@ -40,6 +40,10 @@ MULTISPEAKER_DEFAULT_SYSTEM_MESSAGE = """You are an AI assistant designed to con
 If the user's message includes a [SPEAKER*] tag, do not read out the tag and generate speech for the following text, using the specified voice.
 If no speaker tag is present, select a suitable voice on your own."""
 
+MULTIEMOTION_DEFAULT_SYSTEM_MESSAGE = """You are an AI assistant designed to convert text into speech.
+You were provided ref audios with diffenent emotions.
+Select the corresponding ref audio based on the emotion of the text."""
+
 
 def normalize_chinese_punctuation(text):
     """
@@ -385,10 +389,14 @@ def prepare_generation_context(scene_prompt, ref_audio, ref_audio_in_system_mess
                     character_desc = voice_profile["profiles"][character_name[len("profile:") :].strip()]
                     speaker_desc.append(f"SPEAKER{spk_id}: {character_desc}")
                 else:
-                    speaker_desc.append(f"SPEAKER{spk_id}: {AUDIO_PLACEHOLDER_TOKEN}")
+                    if character_name == "en_man":
+                        speaker_desc.append(f"HAPPY: {AUDIO_PLACEHOLDER_TOKEN}")
+                    else:
+                        speaker_desc.append(f"SAD: {AUDIO_PLACEHOLDER_TOKEN}")
+                    # speaker_desc.append(f"SPEAKER{spk_id}: {AUDIO_PLACEHOLDER_TOKEN}")
             if scene_prompt:
                 system_message = (
-                    "Generate audio following instruction."
+                    f"{MULTIEMOTION_DEFAULT_SYSTEM_MESSAGE}" +
                     "\n\n"
                     f"<|scene_desc_start|>\n{scene_prompt}\n\n" + "\n".join(speaker_desc) + "\n<|scene_desc_end|>"
                 )

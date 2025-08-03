@@ -1287,6 +1287,7 @@ class HiggsAudioModel(HiggsAudioPreTrainedModel, GenerationMixin):
             )
 
         if use_cache and past_key_values is None:
+            logger.info("use DynamicCache ")
             past_key_values = DynamicCache()
 
         if cache_position is None:

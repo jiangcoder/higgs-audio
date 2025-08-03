@@ -61,7 +61,7 @@ class HiggsAudioModelClient:
         model_path,
         audio_tokenizer,
         device_id=None,
-        kv_cache_lengths: List[int] = [1024, 4096, 8192],
+        kv_cache_lengths: List[int] = [1024, 2048],
         use_static_kv_cache=False,
     ):
         if device_id is None:
@@ -735,7 +735,7 @@ class GenerationRequest(BaseModel):
     chunk_max_num_turns: int = Field(1, description="Max turns per chunk for 'speaker' method.")
     generation_chunk_buffer_size: Optional[int] = Field(None, description="Buffer size for generated audio chunks.")
     seed: Optional[int] = Field(12345, description="Random seed for generation.")
-    max_new_tokens: int = Field(2048, description="Maximum new tokens to generate.")
+    max_new_tokens: int = Field(1024, description="Maximum new tokens to generate.")
     sample_rate: int = Field(32000, description="Sample rate for generated audio.")
 
 
@@ -1047,7 +1047,7 @@ async def stream_generate(request: GenerationRequest, request_id: str):
                     audio_tokens = audio_tokens.to(model_client._audio_tokenizer.device)
                     audio_out_ids_l.append(audio_tokens)
 
-                    if len(audio_out_ids_l) >= 16:
+                    if len(audio_out_ids_l) >= 9:
                         first_audio += 1
                         concat_audio_out_ids = torch.concat(audio_out_ids_l, dim=1)
 
@@ -1112,43 +1112,46 @@ async def stream_generate(request: GenerationRequest, request_id: str):
                     concat_audio_out_ids = concat_audio_out_ids.clip(0, model_client._audio_tokenizer.codebook_size - 1)[:, 1:-1]
 
                 # 解码音频
-                wv = model_client._audio_tokenizer.decode(concat_audio_out_ids.unsqueeze(0))[0, 0]
+                if concat_audio_out_ids.shape[1] == 0:
+                    logger.warning(f"[Request {request_id}] No audio tokens to decode, skipping output.")
+                else:
+                    wv = model_client._audio_tokenizer.decode(concat_audio_out_ids.unsqueeze(0))[0, 0]
 
-                if isinstance(wv, torch.Tensor):
-                    wv = wv.detach().cpu().numpy()
+                    if isinstance(wv, torch.Tensor):
+                        wv = wv.detach().cpu().numpy()
 
-                actual_sample_rate = model_client._audio_tokenizer.sampling_rate
+                    actual_sample_rate = model_client._audio_tokenizer.sampling_rate
 
-                # 重采样到目标采样率
-                if request.sample_rate != actual_sample_rate:
-                    wv = librosa.resample(wv, orig_sr=actual_sample_rate, target_sr=request.sample_rate)
+                    # 重采样到目标采样率
+                    if request.sample_rate != actual_sample_rate:
+                        wv = librosa.resample(wv, orig_sr=actual_sample_rate, target_sr=request.sample_rate)
 
-                if pre_audio is not None:
-                    pre_audio, wv = crossfade_audio_chunks(pre_audio, wv, fade_duration=0.04, sample_rate=request.sample_rate)
-                    wv = np.concatenate([pre_audio, wv], axis=0)
+                    if pre_audio is not None:
+                        pre_audio, wv = crossfade_audio_chunks(pre_audio, wv, fade_duration=0.04, sample_rate=request.sample_rate)
+                        wv = np.concatenate([pre_audio, wv], axis=0)
 
-                # 转换为int16格式并编码为base64
-                audio_int16 = (wv * 32767).astype(np.int16)
-                audio_bytes = audio_int16.tobytes()
-                audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+                    # 转换为int16格式并编码为base64
+                    audio_int16 = (wv * 32767).astype(np.int16)
+                    audio_bytes = audio_int16.tobytes()
+                    audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
 
-                # 输出完整的音频数据
-                response_data = {
-                    "choices": [
-                        {
-                            "finish_reason": "stop",
-                            "delta": {
-                                "role": "assistant",
-                                "audio": {
-                                    "data": audio_b64
-                                }
-                            },
-                            "index": 0
-                        }
-                    ]
-                }
+                    # 输出完整的音频数据
+                    response_data = {
+                        "choices": [
+                            {
+                                "finish_reason": "stop",
+                                "delta": {
+                                    "role": "assistant",
+                                    "audio": {
+                                        "data": audio_b64
+                                    }
+                                },
+                                "index": 0
+                            }
+                        ]
+                    }
 
-                yield f"data: {json.dumps(response_data, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps(response_data, ensure_ascii=False)}\n\n"
 
             # 等待线程完成
             thread.join()

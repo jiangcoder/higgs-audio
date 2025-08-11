@@ -5,7 +5,7 @@ import re
 import os
 import copy
 import sys
-from typing import List, Optional, Dict, Any
+from typing import List, Literal, Optional, Dict, Any
 
 # 添加上级目录到Python路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -738,13 +738,55 @@ class GenerationRequest(BaseModel):
     max_new_tokens: int = Field(1024, description="Maximum new tokens to generate.")
     sample_rate: int = Field(32000, description="Sample rate for generated audio.")
 
+class AudioSpeechRequest(BaseModel):
+    model: str = "higgs-audio-v2-generation-3B-base"
+    """ The model to use for the audio speech request. """
+
+    input: str
+    """ The input to the audio speech request. """
+
+    voice: str
+    """ The voice to use for the audio speech request. """
+
+    speed: float = 1.0
+    """ The speed of the audio speech request. """
+
+    temperature: float = 1.0
+    """ The temperature of the audio speech request. """
+
+    top_p: float = 0.95
+    """ The top p of the audio speech request. """
+
+    top_k: int = 50
+    """ The top k of the audio speech request. """
+
+    response_format: Literal["wav", "mp3", "pcm"] = "pcm"
+    """ The response format of the audio speech request. """
+
+    stop: Optional[list[str]] = None
+
+    max_tokens: int = 1024
+
+    sample_rate: int = 24000
+    """ The sample rate of the audio speech request. """
+    
+    seed: Optional[int] = None
+    """ The seed for random number generation. """
+    
+    ras_win_len: int = 7
+    """ The window length for RAS. """
+    ras_win_max_num_repeat: int = 2
+    """ The maximum number of repeats for RAS. """
+    generation_chunk_buffer_size: Optional[int] = None
+    """ Buffer size for generated audio chunks. """
+
 
 @app.on_event("startup")
 def load_model():
     global model_client, audio_tokenizer_global
     logger.info("Loading model and tokenizer...")
-    model_path = "/data6/chen.yuxiang/models//higgs-audio-v2-generation-3B-base"
-    audio_tokenizer_path = "/data6/chen.yuxiang/models//higgs-audio-v2-tokenizer"
+    model_path = "/data6/chen.yuxiang/models/higgs-audio-v2-generation-3B-base"
+    audio_tokenizer_path = "/data6/chen.yuxiang/models/higgs-audio-v2-tokenizer"
     use_static_kv_cache = torch.cuda.is_available()
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
@@ -759,6 +801,93 @@ def load_model():
     )
     logger.info("Model and tokenizer loaded successfully.")
 
+
+@app.post("/v1/audio/speech")
+async def create_audio_speech(request: AudioSpeechRequest):
+    start_time = time.time()
+    request_id = str(uuid.uuid4())[:8]
+    
+    if not model_client:
+        raise HTTPException(status_code=503, detail="Model is not loaded yet.")
+
+    request_tracker.start_request(request_id)
+    
+    try:
+        logger.info(f"[Request {request_id}] Starting audio generation")
+        
+        transcript = request.input
+        pattern = re.compile(r"\[(SPEAKER\d+)\]")
+        speaker_tags = sorted(set(pattern.findall(transcript)))
+
+        transcript = normalize_chinese_punctuation(transcript)
+        transcript = transcript.replace("(", " ").replace(")", " ")
+        transcript = transcript.replace("°F", " degrees Fahrenheit").replace("°C", " degrees Celsius")
+
+        replacements = {"[laugh]": "<SE>[Laughter]</SE>", "[humming start]": "<SE>[Humming]</SE>", "[humming end]": "<SE_e>[Humming]</SE_e>", "[music start]": "<SE_s>[Music]</SE_s>", "[music end]": "<SE_e>[Music]</SE_e>", "[music]": "<SE>[Music]</SE>", "[sing start]": "<SE_s>[Singing]</SE_s>", "[sing end]": "<SE_e>[Singing]</SE_e>", "[applause]": "<SE>[Applause]</SE>", "[cheering]": "<SE>[Cheering]</SE>", "[cough]": "<SE>[Cough]</SE>"}
+        for tag, rep in replacements.items():
+            transcript = transcript.replace(tag, rep)
+
+        transcript = "\n".join([" ".join(line.split()) for line in transcript.split("\n") if line.strip()]).strip()
+        if not any(transcript.endswith(c) for c in [".", "!", "?", ",", ";", '"', "'", "</SE_e>", "</SE>"]):
+            transcript += "."
+
+
+        messages, audio_ids = prepare_generation_context(
+            scene_prompt="generate voice from text: " + transcript,
+            ref_audio=request.voice,
+            ref_audio_in_system_message=False,
+            audio_tokenizer=audio_tokenizer_global,
+            speaker_tags=speaker_tags,
+        )
+        processed_transcript = transcript
+
+        chunked_text = prepare_chunk_text(
+            processed_transcript,
+            chunk_method=None,
+        )
+
+        concat_wv, sr = model_client.generate(
+            messages=messages,
+            audio_ids=audio_ids,
+            chunked_text=chunked_text,
+            generation_chunk_buffer_size=request.generation_chunk_buffer_size,
+            temperature=request.temperature,
+            top_k=request.top_k,
+            top_p=request.top_p,
+            ras_win_len=request.ras_win_len,
+            ras_win_max_num_repeat=request.ras_win_max_num_repeat,
+            seed=request.seed,
+            max_new_tokens=request.max_tokens,
+            request_id=request_id,  # 传递请求ID
+        )
+
+        # Save to in-memory file
+        buffer = io.BytesIO()
+        if isinstance(concat_wv, torch.Tensor):
+            audio_np = concat_wv.cpu().numpy()
+        else:
+            audio_np = concat_wv  # already numpy array
+
+        # 使用音频tokenizer的实际采样率
+        actual_sample_rate = model_client._audio_tokenizer.sampling_rate
+        remove_leading_silence(audio_np, sample_rate=actual_sample_rate)
+        if request.sample_rate != actual_sample_rate:
+            audio_np = librosa.resample(audio_np, orig_sr=actual_sample_rate, target_sr=request.sample_rate)
+        logger.info(f"[Request {request_id}] Audio shape after resampling: {audio_np.shape}, sample rate: {request.sample_rate}")
+        sf.write(buffer, audio_np, request.sample_rate, format='WAV')
+        buffer.seek(0)
+
+        elapsed = time.time() - start_time
+        logger.info(f"[Request {request_id}] Request processed in {elapsed:.2f} seconds")
+        
+        request_tracker.end_request(request_id)
+        return StreamingResponse(buffer, media_type="audio/wav")
+
+    except Exception as e:
+        elapsed = time.time() - start_time
+        logger.error(f"[Request {request_id}] Error during audio generation after {elapsed:.2f}s: {e}")
+        request_tracker.end_request(request_id)
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/generate")
 async def generate_audio(request: GenerationRequest):

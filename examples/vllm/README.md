@@ -42,15 +42,14 @@ We also tested on RTX 4090 GPU with 24GB memory, which can achieve about 600 tok
 To quickly test the server with curl, you can use the following command to generate audio with the audio speech API.
 
 ```bash
-curl -X POST "http://localhost:8000/v1/audio/speech" \
+curl -X POST "http://localhost:6001/v1/audio/speech" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "higgs-audio-v2-generation-3B-base",
-    "voice": "en_woman",
+    "voice": "belinda",
     "input": "Today is a wonderful day to build something people love!",
-    "response_format": "pcm"
+    "response_format": "wav"
   }' \
-  --output - | ffmpeg -f s16le -ar 24000 -ac 1 -i - speech.wav
+  > speech.wav
 ```
 
 

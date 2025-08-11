@@ -893,15 +893,15 @@ async def create_audio_speech(request: AudioSpeechRequest):
 async def generate_audio(request: GenerationRequest):
     start_time = time.time()
     request_id = str(uuid.uuid4())[:8]
-    
+
     if not model_client:
         raise HTTPException(status_code=503, detail="Model is not loaded yet.")
 
     request_tracker.start_request(request_id)
-    
+
     try:
         logger.info(f"[Request {request_id}] Starting audio generation")
-        
+
         transcript = request.transcript
         pattern = re.compile(r"\[(SPEAKER\d+)\]")
         speaker_tags = sorted(set(pattern.findall(transcript)))
@@ -981,7 +981,7 @@ async def generate_audio(request: GenerationRequest):
 
         elapsed = time.time() - start_time
         logger.info(f"[Request {request_id}] Request processed in {elapsed:.2f} seconds")
-        
+
         request_tracker.end_request(request_id)
         return StreamingResponse(buffer, media_type="audio/wav")
 
@@ -996,15 +996,15 @@ async def generate_audio(request: GenerationRequest):
 async def stream_generate_audio(request: GenerationRequest):
     start_time = time.time()
     request_id = str(uuid.uuid4())[:8]
-    
+
     if not model_client:
         raise HTTPException(status_code=503, detail="Model is not loaded yet.")
 
     request_tracker.start_request(request_id)
-    
+
     try:
         logger.info(f"[Request {request_id}] Starting streaming audio generation")
-        
+
         return StreamingResponse(
             stream_generate(request, request_id),
             media_type="text/plain",
@@ -1040,7 +1040,7 @@ def remove_leading_silence(pcm_data, sample_rate=44100, silence_threshold=0.008,
     window_size = int(0.05 * sample_rate)  # 50ms窗口
     energy = np.convolve(np.abs(pcm_data), np.ones(window_size)/window_size, mode='same')
 
-    # 找到第一个超过阈值的点
+    # 找到第一个���过阈值的点
     speech_start = 0
     for i in range(len(energy) - min_silence_frames):
         # 检查接下来的min_silence_frames帧是否都低于阈值
@@ -1059,20 +1059,7 @@ def remove_leading_silence(pcm_data, sample_rate=44100, silence_threshold=0.008,
 
 def crossfade_audio_chunks(pre_audio, cur_audio, fade_duration=0.01, sample_rate=24000):
     cross_fade_samples = int(fade_duration * sample_rate)
-    if len(pre_audio) >= cross_fade_samples and len(cur_audio) >= cross_fade_samples:
-
-        # 交叉淡化
-        fade_out = np.linspace(1, 0, cross_fade_samples, dtype=np.float32)
-        fade_in = np.linspace(0, 1, cross_fade_samples, dtype=np.float32)  
-        # 混合重叠部分
-        overlap = (pre_audio[-cross_fade_samples:] * fade_out +
-                   cur_audio[:cross_fade_samples] * fade_in)
-        pre_audio = np.concatenate([pre_audio[:-cross_fade_samples], overlap])
-        cur_audio = cur_audio[cross_fade_samples:]
-
-        return pre_audio, cur_audio
-    else:
-        return pre_audio, cur_audio
+    return pre_audio, cur_audio
 
 
 async def stream_generate(request: GenerationRequest, request_id: str):
@@ -1176,13 +1163,13 @@ async def stream_generate(request: GenerationRequest, request_id: str):
                     audio_tokens = audio_tokens.to(model_client._audio_tokenizer.device)
                     audio_out_ids_l.append(audio_tokens)
 
-                    if len(audio_out_ids_l) >= 9:
+                    if len(audio_out_ids_l) >= 10:
                         first_audio += 1
                         concat_audio_out_ids = torch.concat(audio_out_ids_l, dim=1)
 
                         if model_client._config.use_delay_pattern:
                             concat_audio_out_ids, overlap_data = streaming_revert_delay_pattern(concat_audio_out_ids, overlap_data)
-                        
+
                         concat_audio_out_ids = concat_audio_out_ids.clip(0, model_client._audio_tokenizer.codebook_size - 1)
                         if first_audio == 1:
                             concat_audio_out_ids = concat_audio_out_ids[:, 1:]
@@ -1284,11 +1271,11 @@ async def stream_generate(request: GenerationRequest, request_id: str):
 
             # 等待线程完成
             thread.join()
-            
+
             elapsed = time.time() - start
             logger.info(f"[Request {request_id}] Streaming generation completed in {elapsed:.2f} seconds")
             request_tracker.end_request(request_id)
-            
+
     except Exception as e:
         elapsed = time.time() - start
         logger.error(f"[Request {request_id}] Error in streaming generation after {elapsed:.2f}s: {e}")
